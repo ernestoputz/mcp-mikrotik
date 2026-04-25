@@ -151,6 +151,12 @@ func (s *Server) toolHandlers() map[string]handlerFn {
 		"get_dns_entries":   s.toolGetDNSEntries,
 		"set_queue_limit":   s.toolSetQueueLimit,
 		"restart_interface": s.toolRestartInterface,
+		// ── WireGuard ─────────────────────────────────────────────────────────
+		"get_wireguard_status":   s.toolGetWireGuardStatus,
+		"add_wireguard_peer":     s.toolAddWireGuardPeer,
+		"disable_wireguard_peer": s.toolDisableWireGuardPeer,
+		"enable_wireguard_peer":  s.toolEnableWireGuardPeer,
+		"remove_wireguard_peer":  s.toolRemoveWireGuardPeer,
 		// ── Backup ────────────────────────────────────────────────────────────
 		"create_backup": s.toolCreateBackup,
 	}

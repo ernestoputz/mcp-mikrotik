@@ -440,6 +440,125 @@ IMPORTANT: Always call first with dry_run=true (default). Only call with dry_run
 				},
 			},
 		},
+		// ── WireGuard ────────────────────────────────────────────────────────
+		{
+			Name:        "get_wireguard_status",
+			Description: "Returns WireGuard interface status and all peers: connected/disconnected, last handshake, IP, rx/tx traffic, and enabled state.",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]Property{
+					"router": routerProp,
+				},
+			},
+		},
+		{
+			Name: "add_wireguard_peer",
+			Description: `Adds a new WireGuard peer (client device) to the VPN.
+Generates a Curve25519 key pair and preshared key automatically, assigns the next available IP in the VPN subnet, and returns the complete WireGuard client config ready to import.
+IMPORTANT: Always call first with dry_run=true (default). The private key is shown only once upon creation — save it immediately.
+Only call with dry_run=false after the user explicitly confirms.`,
+			InputSchema: InputSchema{
+				Type:     "object",
+				Required: []string{"name"},
+				Properties: map[string]Property{
+					"router": routerProp,
+					"name": {
+						Type:        "string",
+						Description: "Unique peer name (e.g. iphone-ernesto, laptop-work).",
+					},
+					"comment": {
+						Type:        "string",
+						Description: "Optional human-readable comment displayed in the router UI.",
+					},
+					"interface": {
+						Type:        "string",
+						Description: "WireGuard interface to add the peer to. Default: wireguard1.",
+						Default:     "wireguard1",
+					},
+					"full_tunnel": {
+						Type:        "boolean",
+						Description: "If true (default), all client traffic is routed through the VPN (0.0.0.0/0). If false, only LAN traffic is routed (split tunnel).",
+						Default:     true,
+					},
+					"endpoint": {
+						Type:        "string",
+						Description: "Router's public hostname or IP (e.g. myhome.dyndns.org). Auto-detected from existing peers if omitted.",
+					},
+					"dns": {
+						Type:        "string",
+						Description: "DNS server IP for the client. Auto-detected from existing peers if omitted.",
+					},
+					"dry_run": {
+						Type:        "boolean",
+						Description: "If true (default), previews what would be created without making changes.",
+						Default:     true,
+					},
+				},
+			},
+		},
+		{
+			Name: "disable_wireguard_peer",
+			Description: `Disables a WireGuard peer, immediately revoking VPN access without deleting the peer config.
+IMPORTANT: Always call first with dry_run=true (default). Only call with dry_run=false after the user explicitly confirms.`,
+			InputSchema: InputSchema{
+				Type:     "object",
+				Required: []string{"name"},
+				Properties: map[string]Property{
+					"router": routerProp,
+					"name": {
+						Type:        "string",
+						Description: "Peer name (as shown in get_wireguard_status).",
+					},
+					"dry_run": {
+						Type:    "boolean",
+						Description: "If true (default), previews the action without changes.",
+						Default: true,
+					},
+				},
+			},
+		},
+		{
+			Name: "enable_wireguard_peer",
+			Description: `Re-enables a previously disabled WireGuard peer, restoring VPN access.
+IMPORTANT: Always call first with dry_run=true (default). Only call with dry_run=false after the user explicitly confirms.`,
+			InputSchema: InputSchema{
+				Type:     "object",
+				Required: []string{"name"},
+				Properties: map[string]Property{
+					"router": routerProp,
+					"name": {
+						Type:        "string",
+						Description: "Peer name (as shown in get_wireguard_status).",
+					},
+					"dry_run": {
+						Type:        "boolean",
+						Description: "If true (default), previews the action without changes.",
+						Default:     true,
+					},
+				},
+			},
+		},
+		{
+			Name: "remove_wireguard_peer",
+			Description: `Permanently deletes a WireGuard peer. The client loses VPN access immediately and the config cannot be recovered.
+IMPORTANT: Always call first with dry_run=true (default). Only call with dry_run=false after the user explicitly confirms.`,
+			InputSchema: InputSchema{
+				Type:     "object",
+				Required: []string{"name"},
+				Properties: map[string]Property{
+					"router": routerProp,
+					"name": {
+						Type:        "string",
+						Description: "Peer name to permanently delete.",
+					},
+					"dry_run": {
+						Type:        "boolean",
+						Description: "If true (default), previews deletion without removing anything.",
+						Default:     true,
+					},
+				},
+			},
+		},
 	}
 
 	m := make(map[string]Tool, len(tools))
