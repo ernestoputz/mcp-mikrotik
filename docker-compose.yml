@@ -1,0 +1,57 @@
+services:
+  mcp-mikrotik:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mcp-mikrotik:local
+    ports:
+      - "8080:8080"
+    environment:
+      MCP_TRANSPORT: http
+      LOG_LEVEL: info
+      HTTP_HOST: 0.0.0.0
+      HTTP_PORT: "8080"
+
+      # Router 1 — primary (CAPsMAN controller)
+      MIKROTIK_ROUTER_1_NAME:           ${MIKROTIK_ROUTER_1_NAME:-tplink}
+      MIKROTIK_ROUTER_1_HOST:           ${MIKROTIK_ROUTER_1_HOST}
+      MIKROTIK_ROUTER_1_PORT:           ${MIKROTIK_ROUTER_1_PORT:-443}
+      MIKROTIK_ROUTER_1_SCHEME:         ${MIKROTIK_ROUTER_1_SCHEME:-https}
+      MIKROTIK_ROUTER_1_USER:           ${MIKROTIK_ROUTER_1_USER}
+      MIKROTIK_ROUTER_1_PASS:           ${MIKROTIK_ROUTER_1_PASS}
+      MIKROTIK_ROUTER_1_TLS_SKIP_VERIFY: ${MIKROTIK_ROUTER_1_TLS_SKIP_VERIFY:-true}
+
+      # Router 2 — escritorio CAP (optional)
+      MIKROTIK_ROUTER_2_NAME:           ${MIKROTIK_ROUTER_2_NAME:-}
+      MIKROTIK_ROUTER_2_HOST:           ${MIKROTIK_ROUTER_2_HOST:-}
+      MIKROTIK_ROUTER_2_PORT:           ${MIKROTIK_ROUTER_2_PORT:-443}
+      MIKROTIK_ROUTER_2_SCHEME:         ${MIKROTIK_ROUTER_2_SCHEME:-https}
+      MIKROTIK_ROUTER_2_USER:           ${MIKROTIK_ROUTER_2_USER:-}
+      MIKROTIK_ROUTER_2_PASS:           ${MIKROTIK_ROUTER_2_PASS:-}
+      MIKROTIK_ROUTER_2_TLS_SKIP_VERIFY: ${MIKROTIK_ROUTER_2_TLS_SKIP_VERIFY:-true}
+
+      # Router 3 — suite CAP (optional)
+      MIKROTIK_ROUTER_3_NAME:           ${MIKROTIK_ROUTER_3_NAME:-}
+      MIKROTIK_ROUTER_3_HOST:           ${MIKROTIK_ROUTER_3_HOST:-}
+      MIKROTIK_ROUTER_3_PORT:           ${MIKROTIK_ROUTER_3_PORT:-443}
+      MIKROTIK_ROUTER_3_SCHEME:         ${MIKROTIK_ROUTER_3_SCHEME:-https}
+      MIKROTIK_ROUTER_3_USER:           ${MIKROTIK_ROUTER_3_USER:-}
+      MIKROTIK_ROUTER_3_PASS:           ${MIKROTIK_ROUTER_3_PASS:-}
+      MIKROTIK_ROUTER_3_TLS_SKIP_VERIFY: ${MIKROTIK_ROUTER_3_TLS_SKIP_VERIFY:-true}
+
+      # AWS S3 — for backup uploads (optional)
+      AWS_ACCESS_KEY_ID:     ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_REGION:            ${AWS_REGION:-}
+      AWS_S3_BUCKET:         ${AWS_S3_BUCKET:-}
+      AWS_S3_PREFIX:         ${AWS_S3_PREFIX:-mikrotik-backups/}
+
+      # MCP server auth token (optional — for HTTP transport)
+      MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:-}
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
