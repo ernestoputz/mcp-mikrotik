@@ -57,7 +57,7 @@ The script enables HTTPS restricted to your LAN and creates a dedicated API user
 # Denied:  local console, telnet, ssh, ftp, reboot, password changes,
 #          policy changes, sensitive data, packet sniffing, winbox, romon
 /user group add name=mcp-group \
-    policy=read,write,rest-api,!local,!telnet,!ssh,!ftp,!reboot,!password,!policy,!test,!winbox,!sniff,!sensitive,!romon
+    policy=read,write,api,rest-api,!local,!telnet,!ssh,!ftp,!reboot,!password,!policy,!test,!winbox,!sniff,!sensitive,!romon
 
 # ══════════════════════════════════════════════════════════════════
 # Step 4: Create dedicated MCP user
