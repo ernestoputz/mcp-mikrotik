@@ -2,7 +2,7 @@
 
 MCP (Model Context Protocol) server that gives LLMs (Claude, etc.) direct access to MikroTik RouterOS 7.x routers via the REST API.
 
-**23 tools** — diagnostic read-only operations and controlled write actions (WiFi, firewall, QoS, backups). All write operations require explicit user confirmation via `dry_run`.
+**57 tools** — diagnostic read-only operations and full write control: WiFi/CAPsMAN, firewall, QoS, DHCP, bridges, VLANs, IP addresses, DNS, WireGuard, and backups. All write operations require explicit user confirmation via `dry_run`.
 
 ---
 
@@ -202,16 +202,86 @@ make run-http          # starts on :8080
 
 ### Actions (always `dry_run=true` first)
 
+All action tools default to `dry_run=true` — Claude always shows a preview and asks for confirmation before executing any change.
+
+#### WiFi / CAPsMAN
+
 | Tool | What it does |
 |---|---|
-| `set_wifi_configuration` | Change SSID, channel, width, TX power on a CAPsMAN profile |
-| `restart_interface` | Disable → 2s → enable an interface |
+| `set_wifi_configuration` | Change SSID, channel, width, TX power, passphrase, auth, FT on a CAPsMAN profile |
+| `create_wifi_network` | Create a new CAPsMAN configuration profile (SSID + band + security) |
+| `delete_wifi_network` | Delete a CAPsMAN profile and its provisioning rules |
+| `add_wifi_security` | Create a WiFi security profile (passphrase, WPA2/3, FT, WPS) |
+| `remove_wifi_security` | Delete a WiFi security profile |
+| `add_wifi_datapath` | Create a CAPsMAN datapath profile (bridge, VLAN, client isolation) |
+| `remove_wifi_datapath` | Delete a datapath profile |
+| `add_wifi_interface` | Create a virtual (slave) WiFi interface on a physical radio |
+| `remove_wifi_interface` | Delete a virtual WiFi interface |
+| `add_wifi_provisioning` | Add a CAPsMAN provisioning rule (radio-mac → config) |
+| `remove_wifi_provisioning` | Remove a provisioning rule by ID |
+| `provision_caps` | Force re-provisioning of all managed APs |
+
+#### Firewall
+
+| Tool | What it does |
+|---|---|
 | `add_firewall_rule` | Add a rule to filter, NAT, or mangle |
 | `remove_firewall_rule` | Delete a firewall rule by ID |
-| `set_queue_limit` | Adjust queue tree or simple queue bandwidth |
-| `create_backup` | Create `.backup` on router and upload to S3 |
 
-> All action tools default to `dry_run=true`. Claude will always show you a preview and ask for confirmation before executing any change.
+#### Bridges / VLANs
+
+| Tool | What it does |
+|---|---|
+| `add_bridge` | Create a bridge interface |
+| `remove_bridge` | Delete a bridge and all its ports |
+| `add_bridge_port` | Add an interface to a bridge |
+| `remove_bridge_port` | Remove an interface from a bridge |
+| `add_vlan` | Create a VLAN sub-interface |
+| `remove_vlan` | Delete a VLAN interface |
+
+#### IP Addresses
+
+| Tool | What it does |
+|---|---|
+| `add_ip_address` | Assign an IP address to an interface |
+| `remove_ip_address` | Remove an IP address from an interface |
+
+#### DHCP
+
+| Tool | What it does |
+|---|---|
+| `add_ip_pool` | Create an IP address pool |
+| `remove_ip_pool` | Delete an IP pool |
+| `add_dhcp_server` | Create a DHCP server on an interface |
+| `remove_dhcp_server` | Delete a DHCP server |
+| `add_dhcp_network` | Add a DHCP network (gateway, DNS, NTP options) |
+| `remove_dhcp_network` | Remove a DHCP network entry |
+| `add_dhcp_lease` | Create a static DHCP lease (MAC → IP) |
+| `remove_dhcp_lease` | Remove a static DHCP lease |
+
+#### DNS
+
+| Tool | What it does |
+|---|---|
+| `add_dns_entry` | Add a static DNS entry (hostname → IP) |
+| `remove_dns_entry` | Remove a static DNS entry |
+
+#### WireGuard
+
+| Tool | What it does |
+|---|---|
+| `add_wireguard_peer` | Generate keys, assign IP, and create a peer config |
+| `disable_wireguard_peer` | Revoke VPN access without deleting the peer |
+| `enable_wireguard_peer` | Re-enable a disabled peer |
+| `remove_wireguard_peer` | Permanently delete a WireGuard peer |
+
+#### Other
+
+| Tool | What it does |
+|---|---|
+| `set_queue_limit` | Adjust queue tree or simple queue bandwidth |
+| `restart_interface` | Disable → 2s → enable an interface |
+| `create_backup` | Create `.backup` on router and upload to S3 |
 
 ---
 

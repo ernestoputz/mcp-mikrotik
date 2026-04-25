@@ -266,9 +266,27 @@ func (s *Server) toolSetWiFiConfiguration(_ context.Context, args map[string]any
 		patch["tx-power"] = v
 		changes["tx-power"] = fmt.Sprintf("%q → %q", target["tx-power"], v)
 	}
+	if v := strOpt(args, "passphrase", ""); v != "" {
+		patch["security.passphrase"] = v
+		changes["security.passphrase"] = "*** → updated (hidden)"
+	}
+	if v := strOpt(args, "auth_types", ""); v != "" {
+		patch["security.authentication-types"] = v
+		changes["security.authentication-types"] = fmt.Sprintf("%q → %q", target["security.authentication-types"], v)
+	}
+	if _, ok := args["ft"]; ok {
+		ftStr := boolToYesNo(boolOpt(args, "ft", false))
+		patch["security.ft"] = ftStr
+		changes["security.ft"] = fmt.Sprintf("%q → %q", target["security.ft"], ftStr)
+	}
+	if _, ok := args["wps"]; ok {
+		wpsStr := boolToYesNo(boolOpt(args, "wps", false))
+		patch["security.wps"] = wpsStr
+		changes["security.wps"] = fmt.Sprintf("%q → %q", target["security.wps"], wpsStr)
+	}
 
 	if len(patch) == 0 {
-		return ToolResult{}, fmt.Errorf("no changes specified; provide at least one of: ssid, channel_frequency, channel_width, tx_power")
+		return ToolResult{}, fmt.Errorf("no changes specified; provide at least one of: ssid, channel_frequency, channel_width, tx_power, passphrase, auth_types, ft, wps")
 	}
 
 	var sb strings.Builder
@@ -278,7 +296,7 @@ func (s *Server) toolSetWiFiConfiguration(_ context.Context, args map[string]any
 		fmt.Fprintf(&sb, "Would modify CAPsMAN configuration: %s (ID: %s)\n", configName, target[".id"])
 		fmt.Fprintf(&sb, "Router: %s\n\nChanges:\n", r.Name())
 		for field, change := range changes {
-			fmt.Fprintf(&sb, "  %-22s  %s\n", field, change)
+			fmt.Fprintf(&sb, "  %-30s  %s\n", field, change)
 		}
 		fmt.Fprintf(&sb, "\nNote: channel changes cause APs to briefly reconnect.\n")
 		fmt.Fprintf(&sb, "\nTo apply: call set_wifi_configuration again with dry_run=false\n")
@@ -294,10 +312,645 @@ func (s *Server) toolSetWiFiConfiguration(_ context.Context, args map[string]any
 	sb.WriteString(strings.Repeat("═", 40) + "\n\n")
 	fmt.Fprintf(&sb, "Profile: %s (ID: %s) on %s\n\nApplied changes:\n", configName, target[".id"], r.Name())
 	for field, change := range changes {
-		fmt.Fprintf(&sb, "  %-22s  %s\n", field, change)
+		fmt.Fprintf(&sb, "  %-30s  %s\n", field, change)
 	}
 
 	return textResult(sb.String()), nil
+}
+
+func (s *Server) toolCreateWiFiNetwork(_ context.Context, args map[string]any) (ToolResult, error) {
+	r, err := s.router(strOpt(args, "router", ""))
+	if err != nil {
+		return ToolResult{}, err
+	}
+
+	name, err := strArg(args, "name")
+	if err != nil {
+		return ToolResult{}, err
+	}
+	ssid, err := strArg(args, "ssid")
+	if err != nil {
+		return ToolResult{}, err
+	}
+	band, err := strArg(args, "band")
+	if err != nil {
+		return ToolResult{}, err
+	}
+
+	dryRun := boolOpt(args, "dry_run", true)
+
+	// Verify name doesn't already exist
+	rawCfgs, err := r.Get("/interface/wifi/configuration")
+	if err != nil {
+		return ToolResult{}, err
+	}
+	var existingCfgs []map[string]string
+	if err := json.Unmarshal(rawCfgs, &existingCfgs); err != nil {
+		return ToolResult{}, fmt.Errorf("parse configurations: %w", err)
+	}
+	for _, c := range existingCfgs {
+		if c["name"] == name {
+			return ToolResult{}, fmt.Errorf("configuration %q already exists; use set_wifi_configuration to modify it", name)
+		}
+	}
+
+	// Build configuration body
+	body := map[string]string{
+		"name":         name,
+		"ssid":         ssid,
+		"channel.band": band,
+		"manager":      "capsman",
+	}
+
+	if v := strOpt(args, "channel_frequency", ""); v != "" {
+		body["channel.frequency"] = v
+	}
+	if v := strOpt(args, "channel_width", ""); v != "" {
+		body["channel.width"] = v
+	}
+	if v := strOpt(args, "tx_power", ""); v != "" {
+		body["tx-power"] = v
+	}
+	if v := strOpt(args, "country", ""); v != "" {
+		body["country"] = v
+	}
+	if v := strOpt(args, "datapath", ""); v != "" {
+		body["datapath"] = v
+	}
+
+	passphrase := strOpt(args, "passphrase", "")
+	authTypes := strOpt(args, "auth_types", "")
+	if passphrase != "" {
+		body["security.passphrase"] = passphrase
+		if authTypes == "" {
+			authTypes = "wpa2-psk,wpa3-psk"
+		}
+	}
+	if authTypes != "" {
+		body["security.authentication-types"] = authTypes
+	}
+	if _, ok := args["ft"]; ok {
+		body["security.ft"] = boolToYesNo(boolOpt(args, "ft", false))
+	}
+	if _, ok := args["wps"]; ok {
+		body["security.wps"] = boolToYesNo(boolOpt(args, "wps", false))
+	}
+
+	var sb strings.Builder
+	if dryRun {
+		sb.WriteString("⚠️  DRY RUN — no changes made\n")
+		sb.WriteString(strings.Repeat("═", 40) + "\n\n")
+		fmt.Fprintf(&sb, "Would create CAPsMAN WiFi configuration on %s:\n\n", r.Name())
+		for k, v := range body {
+			display := v
+			if k == "security.passphrase" {
+				display = "***"
+			}
+			fmt.Fprintf(&sb, "  %-35s  %s\n", k, display)
+		}
+		sb.WriteString("\nNote: After creation, assign this config to APs by adding provisioning\n")
+		sb.WriteString("rules in RouterOS (use get_capsman_status to review existing rules).\n")
+		sb.WriteString("\nTo apply: call create_wifi_network again with dry_run=false\n")
+		return textResult(sb.String()), nil
+	}
+
+	respRaw, err := r.Put("/interface/wifi/configuration", body)
+	if err != nil {
+		return ToolResult{}, fmt.Errorf("create configuration %s: %w", name, err)
+	}
+
+	var created map[string]string
+	_ = json.Unmarshal(respRaw, &created)
+
+	sb.WriteString("✓ WiFi configuration created successfully\n")
+	sb.WriteString(strings.Repeat("═", 40) + "\n\n")
+	fmt.Fprintf(&sb, "Profile: %s  SSID: %s  Band: %s\n", name, ssid, band)
+	fmt.Fprintf(&sb, "Router: %s\n", r.Name())
+	if id := created[".id"]; id != "" {
+		fmt.Fprintf(&sb, "ID: %s\n", id)
+	}
+	sb.WriteString("\nNext steps:\n")
+	sb.WriteString("  • Run get_capsman_status to review provisioning rules\n")
+	sb.WriteString("  • Add provisioning rules in RouterOS to assign this config to APs\n")
+
+	return textResult(sb.String()), nil
+}
+
+func (s *Server) toolDeleteWiFiNetwork(_ context.Context, args map[string]any) (ToolResult, error) {
+	r, err := s.router(strOpt(args, "router", ""))
+	if err != nil {
+		return ToolResult{}, err
+	}
+
+	name, err := strArg(args, "name")
+	if err != nil {
+		return ToolResult{}, err
+	}
+
+	dryRun := boolOpt(args, "dry_run", true)
+	removeProvisioning := boolOpt(args, "remove_provisioning", true)
+
+	// Find configuration
+	rawCfgs, err := r.Get("/interface/wifi/configuration")
+	if err != nil {
+		return ToolResult{}, err
+	}
+	var cfgs []map[string]string
+	if err := json.Unmarshal(rawCfgs, &cfgs); err != nil {
+		return ToolResult{}, fmt.Errorf("parse configurations: %w", err)
+	}
+
+	var target map[string]string
+	for _, c := range cfgs {
+		if c["name"] == name {
+			target = c
+			break
+		}
+	}
+	if target == nil {
+		names := make([]string, len(cfgs))
+		for i, c := range cfgs {
+			names[i] = c["name"]
+		}
+		return ToolResult{}, fmt.Errorf("configuration %q not found; available: %v", name, names)
+	}
+
+	// Collect provisioning rules that reference this config
+	var provRules []map[string]string
+	if removeProvisioning {
+		rawProv, err := r.Get("/interface/wifi/provisioning")
+		if err != nil {
+			return ToolResult{}, err
+		}
+		var allProv []map[string]string
+		if err := json.Unmarshal(rawProv, &allProv); err != nil {
+			return ToolResult{}, fmt.Errorf("parse provisioning: %w", err)
+		}
+		for _, p := range allProv {
+			if p["master-configuration"] == name || p["slave-configuration"] == name {
+				provRules = append(provRules, p)
+			}
+		}
+	}
+
+	var sb strings.Builder
+	if dryRun {
+		sb.WriteString("⚠️  DRY RUN — no changes made\n")
+		sb.WriteString(strings.Repeat("═", 40) + "\n\n")
+		fmt.Fprintf(&sb, "Would DELETE CAPsMAN configuration: %s (ID: %s)\n", name, target[".id"])
+		fmt.Fprintf(&sb, "Router: %s\n", r.Name())
+		fmt.Fprintf(&sb, "SSID: %s   Band: %s\n", target["ssid"], target["channel.band"])
+		if removeProvisioning && len(provRules) > 0 {
+			fmt.Fprintf(&sb, "\nWould also remove %d provisioning rule(s):\n", len(provRules))
+			for _, p := range provRules {
+				comment := ""
+				if p["comment"] != "" {
+					comment = " (" + p["comment"] + ")"
+				}
+				fmt.Fprintf(&sb, "  • ID: %-8s  radio-mac: %-20s%s\n", p[".id"], p["radio-mac"], comment)
+			}
+		} else if removeProvisioning {
+			sb.WriteString("\nNo provisioning rules reference this configuration.\n")
+		}
+		sb.WriteString("\nWarning: This action is irreversible.\n")
+		sb.WriteString("\nTo apply: call delete_wifi_network again with dry_run=false\n")
+		return textResult(sb.String()), nil
+	}
+
+	// Remove provisioning rules first to avoid orphan references
+	for _, p := range provRules {
+		if err := r.Delete("/interface/wifi/provisioning/" + p[".id"]); err != nil {
+			return ToolResult{}, fmt.Errorf("remove provisioning rule %s: %w", p[".id"], err)
+		}
+	}
+
+	if err := r.Delete("/interface/wifi/configuration/" + target[".id"]); err != nil {
+		return ToolResult{}, fmt.Errorf("delete configuration %s: %w", name, err)
+	}
+
+	sb.WriteString("✓ WiFi configuration deleted\n")
+	sb.WriteString(strings.Repeat("═", 40) + "\n\n")
+	fmt.Fprintf(&sb, "Deleted: %s (ID: %s) on %s\n", name, target[".id"], r.Name())
+	if len(provRules) > 0 {
+		fmt.Fprintf(&sb, "Also removed %d provisioning rule(s).\n", len(provRules))
+	}
+
+	return textResult(sb.String()), nil
+}
+
+// ─── WiFi Security Profiles ───────────────────────────────────────────────────
+
+func (s *Server) toolAddWiFiSecurity(_ context.Context, args map[string]any) (ToolResult, error) {
+	r, err := s.router(strOpt(args, "router", ""))
+	if err != nil {
+		return ToolResult{}, err
+	}
+	name, err := strArg(args, "name")
+	if err != nil {
+		return ToolResult{}, err
+	}
+	dryRun := boolOpt(args, "dry_run", true)
+
+	body := map[string]string{"name": name}
+	if v := strOpt(args, "passphrase", ""); v != "" {
+		body["passphrase"] = v
+	}
+	if v := strOpt(args, "auth_types", ""); v != "" {
+		body["authentication-types"] = v
+	} else if body["passphrase"] != "" {
+		body["authentication-types"] = "wpa2-psk,wpa3-psk"
+	}
+	if _, ok := args["ft"]; ok {
+		body["ft"] = boolToYesNo(boolOpt(args, "ft", false))
+	}
+	if _, ok := args["wps"]; ok {
+		body["wps"] = boolToYesNo(boolOpt(args, "wps", false))
+	}
+	if v := strOpt(args, "comment", ""); v != "" {
+		body["comment"] = v
+	}
+
+	if dryRun {
+		var sb strings.Builder
+		sb.WriteString("⚠️  DRY RUN — no changes made\n")
+		sb.WriteString(strings.Repeat("═", 40) + "\n\n")
+		fmt.Fprintf(&sb, "Would create WiFi security profile on %s:\n\n", r.Name())
+		for k, v := range body {
+			if k == "passphrase" {
+				v = "***"
+			}
+			fmt.Fprintf(&sb, "  %-25s  %s\n", k, v)
+		}
+		sb.WriteString("\nTo apply: call add_wifi_security again with dry_run=false\n")
+		return textResult(sb.String()), nil
+	}
+
+	resp, err := r.Put("/interface/wifi/security", body)
+	if err != nil {
+		return ToolResult{}, fmt.Errorf("create WiFi security profile: %w", err)
+	}
+	var created map[string]string
+	_ = json.Unmarshal(resp, &created)
+
+	return textResult(fmt.Sprintf("✓ WiFi security profile %q created (ID: %s) on %s",
+		name, created[".id"], r.Name())), nil
+}
+
+func (s *Server) toolRemoveWiFiSecurity(_ context.Context, args map[string]any) (ToolResult, error) {
+	r, err := s.router(strOpt(args, "router", ""))
+	if err != nil {
+		return ToolResult{}, err
+	}
+	name, err := strArg(args, "name")
+	if err != nil {
+		return ToolResult{}, err
+	}
+	dryRun := boolOpt(args, "dry_run", true)
+
+	raw, err := r.Get("/interface/wifi/security")
+	if err != nil {
+		return ToolResult{}, err
+	}
+	var profiles []map[string]string
+	if err := json.Unmarshal(raw, &profiles); err != nil {
+		return ToolResult{}, fmt.Errorf("parse security profiles: %w", err)
+	}
+	var target map[string]string
+	for _, p := range profiles {
+		if p["name"] == name {
+			target = p
+			break
+		}
+	}
+	if target == nil {
+		return ToolResult{}, fmt.Errorf("security profile %q not found", name)
+	}
+
+	if dryRun {
+		var sb strings.Builder
+		sb.WriteString("⚠️  DRY RUN — no changes made\n")
+		sb.WriteString(strings.Repeat("═", 40) + "\n\n")
+		fmt.Fprintf(&sb, "Would DELETE WiFi security profile %q (ID: %s) on %s\n",
+			name, target[".id"], r.Name())
+		sb.WriteString("\nTo apply: call remove_wifi_security again with dry_run=false\n")
+		return textResult(sb.String()), nil
+	}
+
+	if err := r.Delete("/interface/wifi/security/" + target[".id"]); err != nil {
+		return ToolResult{}, fmt.Errorf("delete security profile: %w", err)
+	}
+	return textResult(fmt.Sprintf("✓ WiFi security profile %q deleted on %s", name, r.Name())), nil
+}
+
+// ─── WiFi Datapaths ───────────────────────────────────────────────────────────
+
+func (s *Server) toolAddWiFiDatapath(_ context.Context, args map[string]any) (ToolResult, error) {
+	r, err := s.router(strOpt(args, "router", ""))
+	if err != nil {
+		return ToolResult{}, err
+	}
+	name, err := strArg(args, "name")
+	if err != nil {
+		return ToolResult{}, err
+	}
+	dryRun := boolOpt(args, "dry_run", true)
+
+	body := map[string]string{"name": name}
+	if v := strOpt(args, "bridge", ""); v != "" {
+		body["bridge"] = v
+	}
+	if v := strOpt(args, "vlan_id", ""); v != "" {
+		body["vlan-id"] = v
+	}
+	if _, ok := args["client_isolation"]; ok {
+		body["client-to-client-forwarding"] = boolToYesNo(!boolOpt(args, "client_isolation", false))
+	}
+	if v := strOpt(args, "comment", ""); v != "" {
+		body["comment"] = v
+	}
+
+	if dryRun {
+		var sb strings.Builder
+		sb.WriteString("⚠️  DRY RUN — no changes made\n")
+		sb.WriteString(strings.Repeat("═", 40) + "\n\n")
+		fmt.Fprintf(&sb, "Would create WiFi datapath on %s:\n\n", r.Name())
+		for k, v := range body {
+			fmt.Fprintf(&sb, "  %-35s  %s\n", k, v)
+		}
+		sb.WriteString("\nTo apply: call add_wifi_datapath again with dry_run=false\n")
+		return textResult(sb.String()), nil
+	}
+
+	resp, err := r.Put("/interface/wifi/datapath", body)
+	if err != nil {
+		return ToolResult{}, fmt.Errorf("create WiFi datapath: %w", err)
+	}
+	var created map[string]string
+	_ = json.Unmarshal(resp, &created)
+
+	return textResult(fmt.Sprintf("✓ WiFi datapath %q created (ID: %s) on %s",
+		name, created[".id"], r.Name())), nil
+}
+
+func (s *Server) toolRemoveWiFiDatapath(_ context.Context, args map[string]any) (ToolResult, error) {
+	r, err := s.router(strOpt(args, "router", ""))
+	if err != nil {
+		return ToolResult{}, err
+	}
+	name, err := strArg(args, "name")
+	if err != nil {
+		return ToolResult{}, err
+	}
+	dryRun := boolOpt(args, "dry_run", true)
+
+	raw, err := r.Get("/interface/wifi/datapath")
+	if err != nil {
+		return ToolResult{}, err
+	}
+	var datapaths []map[string]string
+	if err := json.Unmarshal(raw, &datapaths); err != nil {
+		return ToolResult{}, fmt.Errorf("parse datapaths: %w", err)
+	}
+	var target map[string]string
+	for _, d := range datapaths {
+		if d["name"] == name {
+			target = d
+			break
+		}
+	}
+	if target == nil {
+		return ToolResult{}, fmt.Errorf("datapath %q not found", name)
+	}
+
+	if dryRun {
+		var sb strings.Builder
+		sb.WriteString("⚠️  DRY RUN — no changes made\n")
+		sb.WriteString(strings.Repeat("═", 40) + "\n\n")
+		fmt.Fprintf(&sb, "Would DELETE WiFi datapath %q (bridge: %s, ID: %s) on %s\n",
+			name, target["bridge"], target[".id"], r.Name())
+		sb.WriteString("\nTo apply: call remove_wifi_datapath again with dry_run=false\n")
+		return textResult(sb.String()), nil
+	}
+
+	if err := r.Delete("/interface/wifi/datapath/" + target[".id"]); err != nil {
+		return ToolResult{}, fmt.Errorf("delete datapath: %w", err)
+	}
+	return textResult(fmt.Sprintf("✓ WiFi datapath %q deleted on %s", name, r.Name())), nil
+}
+
+// ─── Virtual WiFi Interfaces ──────────────────────────────────────────────────
+
+func (s *Server) toolAddWiFiInterface(_ context.Context, args map[string]any) (ToolResult, error) {
+	r, err := s.router(strOpt(args, "router", ""))
+	if err != nil {
+		return ToolResult{}, err
+	}
+	name, err := strArg(args, "name")
+	if err != nil {
+		return ToolResult{}, err
+	}
+	master, err := strArg(args, "master_interface")
+	if err != nil {
+		return ToolResult{}, err
+	}
+	dryRun := boolOpt(args, "dry_run", true)
+
+	body := map[string]string{
+		"name":             name,
+		"master-interface": master,
+	}
+	if v := strOpt(args, "configuration", ""); v != "" {
+		body["configuration"] = v
+	}
+	if v := strOpt(args, "comment", ""); v != "" {
+		body["comment"] = v
+	}
+
+	if dryRun {
+		var sb strings.Builder
+		sb.WriteString("⚠️  DRY RUN — no changes made\n")
+		sb.WriteString(strings.Repeat("═", 40) + "\n\n")
+		fmt.Fprintf(&sb, "Would create virtual WiFi interface on %s:\n\n", r.Name())
+		for k, v := range body {
+			fmt.Fprintf(&sb, "  %-20s  %s\n", k, v)
+		}
+		sb.WriteString("\nTo apply: call add_wifi_interface again with dry_run=false\n")
+		return textResult(sb.String()), nil
+	}
+
+	resp, err := r.Put("/interface/wifi", body)
+	if err != nil {
+		return ToolResult{}, fmt.Errorf("create WiFi interface: %w", err)
+	}
+	var created map[string]string
+	_ = json.Unmarshal(resp, &created)
+
+	return textResult(fmt.Sprintf("✓ Virtual WiFi interface %q created on %s (ID: %s) on %s",
+		name, master, created[".id"], r.Name())), nil
+}
+
+func (s *Server) toolRemoveWiFiInterface(_ context.Context, args map[string]any) (ToolResult, error) {
+	r, err := s.router(strOpt(args, "router", ""))
+	if err != nil {
+		return ToolResult{}, err
+	}
+	name, err := strArg(args, "name")
+	if err != nil {
+		return ToolResult{}, err
+	}
+	dryRun := boolOpt(args, "dry_run", true)
+
+	raw, err := r.Get("/interface/wifi")
+	if err != nil {
+		return ToolResult{}, err
+	}
+	var ifaces []map[string]string
+	if err := json.Unmarshal(raw, &ifaces); err != nil {
+		return ToolResult{}, fmt.Errorf("parse WiFi interfaces: %w", err)
+	}
+	var target map[string]string
+	for _, i := range ifaces {
+		if i["name"] == name {
+			target = i
+			break
+		}
+	}
+	if target == nil {
+		return ToolResult{}, fmt.Errorf("WiFi interface %q not found", name)
+	}
+	if target["master-interface"] == "" {
+		return ToolResult{}, fmt.Errorf("%q is a physical interface — only virtual (slave) interfaces can be removed", name)
+	}
+
+	if dryRun {
+		var sb strings.Builder
+		sb.WriteString("⚠️  DRY RUN — no changes made\n")
+		sb.WriteString(strings.Repeat("═", 40) + "\n\n")
+		fmt.Fprintf(&sb, "Would DELETE virtual WiFi interface %q (master: %s, ID: %s) on %s\n",
+			name, target["master-interface"], target[".id"], r.Name())
+		sb.WriteString("\nTo apply: call remove_wifi_interface again with dry_run=false\n")
+		return textResult(sb.String()), nil
+	}
+
+	if err := r.Delete("/interface/wifi/" + target[".id"]); err != nil {
+		return ToolResult{}, fmt.Errorf("delete WiFi interface: %w", err)
+	}
+	return textResult(fmt.Sprintf("✓ Virtual WiFi interface %q deleted on %s", name, r.Name())), nil
+}
+
+// ─── CAPsMAN Provisioning ─────────────────────────────────────────────────────
+
+func (s *Server) toolAddWiFiProvisioning(_ context.Context, args map[string]any) (ToolResult, error) {
+	r, err := s.router(strOpt(args, "router", ""))
+	if err != nil {
+		return ToolResult{}, err
+	}
+	masterCfg, err := strArg(args, "master_configuration")
+	if err != nil {
+		return ToolResult{}, err
+	}
+	dryRun := boolOpt(args, "dry_run", true)
+
+	action := strOpt(args, "action", "create-dynamic-enabled")
+	body := map[string]string{
+		"master-configuration": masterCfg,
+		"action":               action,
+	}
+	if v := strOpt(args, "radio_mac", ""); v != "" {
+		body["radio-mac"] = v
+	}
+	if v := strOpt(args, "supported_bands", ""); v != "" {
+		body["supported-bands"] = v
+	}
+	if v := strOpt(args, "slave_configuration", ""); v != "" {
+		body["slave-configurations"] = v
+	}
+	if v := strOpt(args, "comment", ""); v != "" {
+		body["comment"] = v
+	}
+
+	if dryRun {
+		var sb strings.Builder
+		sb.WriteString("⚠️  DRY RUN — no changes made\n")
+		sb.WriteString(strings.Repeat("═", 40) + "\n\n")
+		fmt.Fprintf(&sb, "Would create CAPsMAN provisioning rule on %s:\n\n", r.Name())
+		for k, v := range body {
+			fmt.Fprintf(&sb, "  %-25s  %s\n", k, v)
+		}
+		if body["radio-mac"] == "" {
+			sb.WriteString("\nNote: no radio-mac set — this rule will match ALL radios.\n")
+		}
+		sb.WriteString("\nTo apply: call add_wifi_provisioning again with dry_run=false\n")
+		return textResult(sb.String()), nil
+	}
+
+	resp, err := r.Put("/interface/wifi/provisioning", body)
+	if err != nil {
+		return ToolResult{}, fmt.Errorf("create provisioning rule: %w", err)
+	}
+	var created map[string]string
+	_ = json.Unmarshal(resp, &created)
+
+	return textResult(fmt.Sprintf("✓ CAPsMAN provisioning rule created (config: %s, ID: %s) on %s",
+		masterCfg, created[".id"], r.Name())), nil
+}
+
+func (s *Server) toolRemoveWiFiProvisioning(_ context.Context, args map[string]any) (ToolResult, error) {
+	r, err := s.router(strOpt(args, "router", ""))
+	if err != nil {
+		return ToolResult{}, err
+	}
+	ruleID, err := strArg(args, "id")
+	if err != nil {
+		return ToolResult{}, err
+	}
+	dryRun := boolOpt(args, "dry_run", true)
+
+	raw, err := r.Get("/interface/wifi/provisioning/" + ruleID)
+	if err != nil {
+		return ToolResult{}, fmt.Errorf("fetch provisioning rule %s: %w", ruleID, err)
+	}
+	var rule map[string]string
+	_ = json.Unmarshal(raw, &rule)
+
+	if dryRun {
+		var sb strings.Builder
+		sb.WriteString("⚠️  DRY RUN — no changes made\n")
+		sb.WriteString(strings.Repeat("═", 40) + "\n\n")
+		fmt.Fprintf(&sb, "Would DELETE provisioning rule %s:\n", ruleID)
+		fmt.Fprintf(&sb, "  master-config: %s\n", rule["master-configuration"])
+		fmt.Fprintf(&sb, "  radio-mac:     %s\n", rule["radio-mac"])
+		fmt.Fprintf(&sb, "  action:        %s\n", rule["action"])
+		fmt.Fprintf(&sb, "\nRouter: %s\n", r.Name())
+		sb.WriteString("\nTo apply: call remove_wifi_provisioning again with dry_run=false\n")
+		return textResult(sb.String()), nil
+	}
+
+	if err := r.Delete("/interface/wifi/provisioning/" + ruleID); err != nil {
+		return ToolResult{}, fmt.Errorf("delete provisioning rule: %w", err)
+	}
+	return textResult(fmt.Sprintf("✓ CAPsMAN provisioning rule %s deleted on %s", ruleID, r.Name())), nil
+}
+
+func (s *Server) toolProvisionCAPs(_ context.Context, args map[string]any) (ToolResult, error) {
+	r, err := s.router(strOpt(args, "router", ""))
+	if err != nil {
+		return ToolResult{}, err
+	}
+
+	_, err = r.Post("/interface/wifi/capsman/provision", map[string]string{})
+	if err != nil {
+		return ToolResult{}, fmt.Errorf("force CAP provisioning: %w", err)
+	}
+	return textResult(fmt.Sprintf("✓ CAPsMAN re-provisioning triggered on %s — APs will reconnect and re-apply their configurations.", r.Name())), nil
+}
+
+// boolToYesNo converts a boolean to RouterOS "yes"/"no".
+func boolToYesNo(b bool) string {
+	if b {
+		return "yes"
+	}
+	return "no"
 }
 
 // formatRate converts a bits-per-second value string to a human-readable rate.
