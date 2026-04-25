@@ -1064,6 +1064,70 @@ IMPORTANT: Always call first with dry_run=true (default). Only call with dry_run
 			},
 		},
 
+		// ── Generic Commands ─────────────────────────────────────────────────
+		{
+			Name: "run_command",
+			Description: `Executes any RouterOS REST API call directly. Use this for operations not covered by specific tools.
+For read operations (GET) no confirmation is needed. For write operations (POST/PUT/PATCH/DELETE), always call first with dry_run=true (default).
+
+Examples:
+  GET  /system/resource          — same as get_system_info but raw JSON
+  POST /system/reboot            — reboot the router (requires dry_run=false)
+  GET  /interface/wifi/channel   — list WiFi channel profiles
+  POST /ip/firewall/connection   — query active connections
+  DELETE /ip/address/*3          — remove an IP by ID`,
+			InputSchema: InputSchema{
+				Type:     "object",
+				Required: []string{"path"},
+				Properties: map[string]Property{
+					"router": routerProp,
+					"path": {
+						Type:        "string",
+						Description: "RouterOS REST API path without /rest prefix (e.g. /system/resource, /ip/address).",
+					},
+					"method": {
+						Type:        "string",
+						Description: "HTTP method. Default: GET.",
+						Enum:        []string{"GET", "POST", "PUT", "PATCH", "DELETE"},
+					},
+					"body": {
+						Type:        "string",
+						Description: "JSON body for write operations (e.g. '{\"name\":\"test\"}').",
+					},
+					"dry_run": {
+						Type:        "boolean",
+						Description: "For write methods (POST/PUT/PATCH/DELETE): preview without executing. Default: true. Ignored for GET.",
+						Default:     true,
+					},
+				},
+			},
+		},
+		{
+			Name: "run_script",
+			Description: `Creates and executes a RouterOS script on the router, then deletes it. Useful for complex operations, bulk changes, or anything not achievable via single REST calls.
+Script output is NOT returned (RouterOS REST API limitation) — use ':log info message=...' in the script and then call get_logs with topics=script to retrieve output.
+IMPORTANT: Always call first with dry_run=true (default). Only call with dry_run=false after the user explicitly confirms.`,
+			InputSchema: InputSchema{
+				Type:     "object",
+				Required: []string{"source"},
+				Properties: map[string]Property{
+					"router": routerProp,
+					"source": {
+						Type: "string",
+						Description: `RouterOS script source code. Examples:
+  :log info message="hello"
+  /interface/wifi/capsman provision
+  :foreach i in=[/ip/address find] do={:log info message=[/ip/address get $i address]}`,
+					},
+					"dry_run": {
+						Type:        "boolean",
+						Description: "If true (default), shows the script without executing it.",
+						Default:     true,
+					},
+				},
+			},
+		},
+
 		// ── WireGuard ────────────────────────────────────────────────────────
 		{
 			Name:        "get_wireguard_status",

@@ -174,6 +174,9 @@ func (s *Server) toolHandlers() map[string]handlerFn {
 		// ── DNS ───────────────────────────────────────────────────────────────
 		"add_dns_entry":    s.toolAddDNSEntry,
 		"remove_dns_entry": s.toolRemoveDNSEntry,
+		// ── Generic ───────────────────────────────────────────────────────────
+		"run_command": s.toolRunCommand,
+		"run_script":  s.toolRunScript,
 		// ── Firewall ──────────────────────────────────────────────────────────
 		"get_firewall_rules":   s.toolGetFirewallRules,
 		"add_firewall_rule":    s.toolAddFirewallRule,
