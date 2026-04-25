@@ -108,31 +108,56 @@ Key variables:
 
 ### Claude Desktop (stdio — recommended)
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+Build the Docker image first:
+```bash
+make docker-build
+```
+
+Then add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
     "mikrotik": {
-      "command": "/path/to/mcp-mikrotik/bin/mcp-server",
-      "env": {
-        "MIKROTIK_ROUTER_1_NAME": "tplink",
-        "MIKROTIK_ROUTER_1_HOST": "10.1.0.1",
-        "MIKROTIK_ROUTER_1_PORT": "443",
-        "MIKROTIK_ROUTER_1_SCHEME": "https",
-        "MIKROTIK_ROUTER_1_USER": "mcp-api",
-        "MIKROTIK_ROUTER_1_PASS": "your-password",
-        "MIKROTIK_ROUTER_1_TLS_SKIP_VERIFY": "true"
-      }
+      "command": "/usr/local/bin/docker",
+      "args": [
+        "run", "--rm", "-i",
+        "-e", "MCP_TRANSPORT=stdio",
+        "-e", "LOG_LEVEL=info",
+        "-e", "MIKROTIK_ROUTER_1_NAME=tplink",
+        "-e", "MIKROTIK_ROUTER_1_HOST=10.1.0.1",
+        "-e", "MIKROTIK_ROUTER_1_PORT=443",
+        "-e", "MIKROTIK_ROUTER_1_SCHEME=https",
+        "-e", "MIKROTIK_ROUTER_1_USER=mcp-api",
+        "-e", "MIKROTIK_ROUTER_1_PASS=your-password",
+        "-e", "MIKROTIK_ROUTER_1_TLS_SKIP_VERIFY=true",
+        "-e", "MIKROTIK_ROUTER_2_NAME=escritorio",
+        "-e", "MIKROTIK_ROUTER_2_HOST=10.1.0.X",
+        "-e", "MIKROTIK_ROUTER_2_PORT=443",
+        "-e", "MIKROTIK_ROUTER_2_SCHEME=https",
+        "-e", "MIKROTIK_ROUTER_2_USER=mcp-api",
+        "-e", "MIKROTIK_ROUTER_2_PASS=your-password",
+        "-e", "MIKROTIK_ROUTER_2_TLS_SKIP_VERIFY=true",
+        "-e", "MIKROTIK_ROUTER_3_NAME=suite",
+        "-e", "MIKROTIK_ROUTER_3_HOST=10.1.0.3",
+        "-e", "MIKROTIK_ROUTER_3_PORT=443",
+        "-e", "MIKROTIK_ROUTER_3_SCHEME=https",
+        "-e", "MIKROTIK_ROUTER_3_USER=mcp-api",
+        "-e", "MIKROTIK_ROUTER_3_PASS=your-password",
+        "-e", "MIKROTIK_ROUTER_3_TLS_SKIP_VERIFY=true",
+        "-e", "AWS_ACCESS_KEY_ID=your-key",
+        "-e", "AWS_SECRET_ACCESS_KEY=your-secret",
+        "-e", "AWS_REGION=us-east-1",
+        "-e", "AWS_S3_BUCKET=your-bucket",
+        "-e", "AWS_S3_PREFIX=mikrotik-backups/",
+        "mcp-mikrotik:local"
+      ]
     }
   }
 }
 ```
 
-Build the binary first:
-```bash
-make build
-```
+> Remove router blocks (ROUTER_2, ROUTER_3) or AWS vars if not in use. The server ignores routers with empty HOST.
 
 ### Docker Compose (HTTP transport)
 
