@@ -30,7 +30,7 @@ tidy:
 
 ## Build Docker image
 docker-build:
-	docker build -t $(IMAGE):$(TAG) -t $(IMAGE):latest .
+	docker build -t $(IMAGE):$(TAG) -t $(IMAGE):latest -t $(IMAGE):local .
 
 ## Start container via Docker Compose (HTTP transport on :8080)
 docker-run:
